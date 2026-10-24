@@ -1,0 +1,126 @@
+#include <Wire.h>
+#include <RTClib.h>
+#include <LiquidCrystal_I2C.h>
+#include <Servo.h>
+
+// Objects
+RTC_DS3231 rtc;
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+Servo myServo;
+
+// Pins
+int buzzer = 8;
+int irPin = 7;
+
+// -------- ALARM TIMES (EDIT HERE) --------
+int alarmHours[3] = {8, 13, 20};   // 8 AM, 1 PM, 8 PM
+int alarmMinutes[3] = {0, 0, 0};
+
+// Alarm control
+bool alarmTriggered[3] = {false, false, false};
+int currentAlarm = -1;
+
+// Buzzer control
+bool buzzerActive = false;
+unsigned long buzzerStart = 0;
+
+void setup() {
+  pinMode(buzzer, OUTPUT);
+  pinMode(irPin, INPUT);
+
+  lcd.init();
+  lcd.backlight();
+
+  rtc.begin();
+  myServo.attach(9);
+
+  // ⚠️ Run ONCE then comment
+  // rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+}
+
+void loop() {
+
+  DateTime now = rtc.now();
+
+  // -------- DISPLAY TIME --------
+  lcd.setCursor(0, 0);
+  lcd.print("Time: ");
+
+  if (now.hour() < 10) lcd.print("0");
+  lcd.print(now.hour());
+  lcd.print(":");
+
+  if (now.minute() < 10) lcd.print("0");
+  lcd.print(now.minute());
+
+  // -------- CHECK ALL 3 ALARMS --------
+  for (int i = 0; i < 3; i++) {
+
+    if (now.hour() == alarmHours[i] &&
+        now.minute() == alarmMinutes[i] &&
+        !alarmTriggered[i]) {
+
+      alarmTriggered[i] = true;
+      currentAlarm = i;
+
+      lcd.setCursor(0, 1);
+
+      if (i == 0) lcd.print("Morning Dose ");
+      if (i == 1) lcd.print("Afternoon    ");
+      if (i == 2) lcd.print("Night Dose   ");
+
+      // Start buzzer
+      buzzerActive = true;
+      buzzerStart = millis();
+      digitalWrite(buzzer, HIGH);
+    }
+
+    // Reset trigger after minute passes
+    if (now.minute() != alarmMinutes[i]) {
+      alarmTriggered[i] = false;
+    }
+  }
+
+  // -------- BUZZER CONTROL --------
+  if (buzzerActive) {
+    if (millis() - buzzerStart >= 5000) {
+      digitalWrite(buzzer, LOW);
+      buzzerActive = false;
+
+      checkMedicine(); // check after buzzer
+    }
+  }
+
+  delay(200);
+}
+
+// -------- CHECK MEDICINE --------
+void checkMedicine() {
+
+  bool detected = false;
+
+  // Check IR for 3 seconds
+  for (int i = 0; i < 15; i++) {
+    if (digitalRead(irPin) == LOW) {
+      detected = true;
+    }
+    delay(200);
+  }
+
+  if (detected) {
+    lcd.clear();
+    lcd.print("Thank You!");
+
+    myServo.write(90);
+    delay(2000);
+    myServo.write(0);
+  } else {
+    lcd.clear();
+    lcd.print("Not Taken!");
+
+    // Repeat buzzer
+    digitalWrite(buzzer, HIGH);
+    delay(5000);
+    digitalWrite(buzzer, LOW);
+  }
+}
